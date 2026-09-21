@@ -1254,28 +1254,61 @@
       <div class="info">
         <div class="name">${p.name} <span class="pill">${p.cards.length}/${gameState.settings.maxCards}</span></div>
         <div class="budget">${fmt(p.budget)}</div>
-        <div class="force-line">💪 Force totale : ${teamPower(p.cards)}</div>
+        <div class="force-line">💪 Force moyenne : ${teamPower(p.cards)}</div>
         <div class="cards">${p.cards.length ? p.cards.map((c) => c.name).join(", ") : "Aucun personnage"}</div>
       </div>`;
           app.appendChild(pr);
         });
       }
 
+      function renderBidStatus(app) {
+        const b = gameState.bidding;
+        const wrap = document.createElement("div");
+        wrap.className = "card";
+        wrap.innerHTML = `<label style="margin-top:0;">📊 État des mises</label>`;
+        gameState.players.forEach((p, i) => {
+          const row = document.createElement("div");
+          row.className = "player-row";
+          let tag;
+          if (i === b.highestIdx) {
+            tag = `<span class="pill" style="background:var(--accent);color:#1a1206;border-color:var(--accent);">👑 ${fmt(b.highestAmount)}</span>`;
+          } else if (b.passed.includes(i)) {
+            tag = `<span class="pill" style="opacity:.55;">🙅 Passé</span>`;
+          } else if (i === b.turnIdx) {
+            tag = `<span class="pill">⏳ En train de miser</span>`;
+          } else {
+            tag = `<span class="pill" style="opacity:.55;">En attente</span>`;
+          }
+          row.innerHTML = `${avatarHtml(p.name, "sm")}<div class="info"><div class="name">${p.name}</div></div>${tag}`;
+          wrap.appendChild(row);
+        });
+        app.appendChild(wrap);
+      }
+
       function renderShareButton(app, label) {
         const card = document.createElement("div");
-        card.className = "card";
-        card.innerHTML = `<label style="margin-top:0;">🔗 Partager le lien</label><div class="linkbox" id="linkTextBox"></div>`;
-        card.querySelector("#linkTextBox").textContent = linkFor(gameState);
-        const hint = document.createElement("div");
-        hint.className = "muted";
-        hint.style.marginTop = "6px";
-        hint.textContent = "Copie ce lien et envoie-le à tes amis (SMS, WhatsApp, groupe...).";
-        card.appendChild(hint);
+        card.className = "card share-card";
         const btn = document.createElement("button");
         btn.id = "copyBtn";
+        btn.className = "secondary";
         btn.textContent = "📋 " + (label || "Copier le lien");
         btn.onclick = copyLink;
         card.appendChild(btn);
+        const details = document.createElement("details");
+        details.style.marginTop = "8px";
+        const summary = document.createElement("summary");
+        summary.className = "muted";
+        summary.style.cursor = "pointer";
+        summary.style.fontSize = ".75rem";
+        summary.textContent = "Afficher le lien en texte";
+        details.appendChild(summary);
+        const box = document.createElement("div");
+        box.className = "linkbox";
+        box.id = "linkTextBox";
+        box.style.marginTop = "6px";
+        box.textContent = linkFor(gameState);
+        details.appendChild(box);
+        card.appendChild(details);
         app.appendChild(card);
       }
 
@@ -1389,8 +1422,8 @@
           card.appendChild(p);
         }
         app.appendChild(card);
-        if (gameState.mode === "online") renderShareButton(app);
         renderStandings(app);
+        if (gameState.mode === "online") renderShareButton(app);
       }
 
       function onDrawClick() {
@@ -1518,8 +1551,9 @@
             confirmBox.appendChild(no);
             card.appendChild(confirmBox);
             app.appendChild(card);
-            if (gameState.mode === "online") renderShareButton(app);
+            renderBidStatus(app);
             renderStandings(app);
+            if (gameState.mode === "online") renderShareButton(app);
             return;
           }
 
@@ -1598,8 +1632,9 @@
           card.appendChild(p);
         }
         app.appendChild(card);
-        if (gameState.mode === "online") renderShareButton(app);
+        renderBidStatus(app);
         renderStandings(app);
+        if (gameState.mode === "online") renderShareButton(app);
       }
 
       function onBid(myIdx, amount) {
@@ -1660,9 +1695,9 @@
           card.appendChild(p);
         }
         app.appendChild(card);
+        renderStandings(app);
         if (gameState.mode === "online")
           renderShareButton(app, `Copier le lien pour ${drawer.name}`);
-        renderStandings(app);
       }
 
       function onReveal() {
@@ -1816,7 +1851,7 @@
       <div class="info">
         <div class="name">${p.name}</div>
         <div class="budget">${fmt(p.budget)} restants</div>
-        <div class="force-line">💪 Force totale : ${p.power}</div>
+        <div class="force-line">💪 Force moyenne : ${p.power}</div>
         <div class="cards">${p.cards.length} perso(s) : ${p.cards.map((c) => c.name).join(", ") || "—"}</div>
       </div>`;
           card.appendChild(pr);

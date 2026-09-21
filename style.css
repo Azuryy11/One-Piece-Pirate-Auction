@@ -581,6 +581,16 @@
         font-family: -apple-system, sans-serif;
         margin-top: 2px;
       }
+      .share-card {
+        padding: 10px 14px;
+        text-align: center;
+      }
+      .share-card summary {
+        list-style: none;
+      }
+      .share-card summary::-webkit-details-marker {
+        display: none;
+      }
       @keyframes fadeInUp {
         from {
           opacity: 0;
