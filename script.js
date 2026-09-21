@@ -384,12 +384,73 @@
         }
       }
 
+      function readGidFromHash() {
+        const m = location.hash.match(/g=([^&]+)/);
+        return m ? m[1] : null;
+      }
+
       function pageUrl() {
         return location.origin + location.pathname;
       }
 
       function linkFor(st) {
+        if (st && st.mode === "online") return pageUrl() + "#g=" + st.gid;
         return pageUrl() + "#s=" + b64Encode(st);
+      }
+
+      // Firebase Realtime Database : partage l'état de la partie en ligne entre tous les joueurs
+      const firebaseConfig = {
+        apiKey: "AIzaSyAU-npJRhgAYfbNsGLRqSoni87IGEPlvbg",
+        authDomain: "one-piece-pirate-auction.firebaseapp.com",
+        databaseURL: "https://one-piece-pirate-auction-default-rtdb.europe-west1.firebasedatabase.app/",
+        projectId: "one-piece-pirate-auction",
+        storageBucket: "one-piece-pirate-auction.firebasestorage.app",
+        messagingSenderId: "97794235250",
+        appId: "1:97794235250:web:3dd336051b11219f421beb",
+      };
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.database();
+      let onlineListenerGid = null;
+
+      // Firebase supprime silencieusement les tableaux vides ([]) et les valeurs null en écriture :
+      // on reconstruit ces champs par défaut à la lecture pour ne pas planter le rendu.
+      function normalizeGameState(st) {
+        if (!st) return null;
+        const bidding = st.bidding
+          ? {
+              turnIdx: st.bidding.turnIdx,
+              highestIdx: st.bidding.highestIdx === undefined ? null : st.bidding.highestIdx,
+              highestAmount: st.bidding.highestAmount || 0,
+              passed: st.bidding.passed || [],
+              mandatory: !!st.bidding.mandatory,
+            }
+          : null;
+        return {
+          ...st,
+          deck: st.deck || [],
+          discard: st.discard || [],
+          history: st.history || [],
+          players: (st.players || []).map((p) => ({ ...p, cards: p.cards || [] })),
+          bidding,
+          lastResult: st.lastResult === undefined ? null : st.lastResult,
+        };
+      }
+
+      function ensureOnlineListener(gid) {
+        if (onlineListenerGid === gid) return;
+        if (onlineListenerGid) db.ref("games/" + onlineListenerGid).off();
+        onlineListenerGid = gid;
+        db.ref("games/" + gid).on("value", (snap) => {
+          onlineLoading = false;
+          gameState = normalizeGameState(snap.val());
+          render();
+        });
+      }
+
+      function stopOnlineListener() {
+        if (onlineListenerGid) db.ref("games/" + onlineListenerGid).off();
+        onlineListenerGid = null;
+        onlineLoading = false;
       }
 
       function lsKeyMe(gid) {
@@ -430,7 +491,9 @@
         }
       }
 
-      let gameState = readStateFromHash();
+      let onlineGid = readGidFromHash();
+      let onlineLoading = !!onlineGid;
+      let gameState = onlineGid ? null : readStateFromHash();
       let draft = {
         mode: null,
         players: [],
@@ -452,7 +515,13 @@
 
       function updateState(newState) {
         gameState = newState;
-        history.replaceState(null, "", "#s=" + b64Encode(newState));
+        if (newState && newState.mode === "online") {
+          history.replaceState(null, "", "#g=" + newState.gid);
+          ensureOnlineListener(newState.gid);
+          db.ref("games/" + newState.gid).set(newState);
+        } else {
+          history.replaceState(null, "", "#s=" + b64Encode(newState));
+        }
         render();
       }
 
@@ -503,6 +572,14 @@
         hero.innerHTML = `<h1>🏴‍☠️ Enchères à l'Aveugle</h1><div class="rope"></div><div class="sub">Tire une carte, mise à la hausse, remporte les personnages</div>`;
         app.appendChild(hero);
 
+        if (onlineLoading) {
+          const card = document.createElement("div");
+          card.className = "card center";
+          card.innerHTML = `<p class="muted" style="margin:0;">⏳ Connexion à la partie...</p>`;
+          app.appendChild(card);
+          return;
+        }
+
         if (!gameState) {
           if (!draft.mode) renderHomeChoice(app);
           else if (draft.mode === "local") renderLocalSetup(app);
@@ -521,6 +598,7 @@
               )
             ) {
               confettiShown = false;
+              stopOnlineListener();
               gameState = null;
               draft = {
                 mode: null,
@@ -1750,6 +1828,7 @@
         homeBtn.textContent = "🏠 Retour à l'accueil";
         homeBtn.onclick = () => {
           confettiShown = false;
+          stopOnlineListener();
           gameState = null;
           draft = {
             mode: null,
@@ -1769,8 +1848,16 @@
       }
 
       window.addEventListener("hashchange", () => {
-        gameState = readStateFromHash();
+        const gid = readGidFromHash();
+        if (gid) {
+          onlineLoading = true;
+          ensureOnlineListener(gid);
+        } else {
+          stopOnlineListener();
+          gameState = readStateFromHash();
+        }
         render();
       });
 
+      if (onlineGid) ensureOnlineListener(onlineGid);
       render();
