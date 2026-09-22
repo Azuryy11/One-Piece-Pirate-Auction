@@ -423,6 +423,7 @@
               highestAmount: st.bidding.highestAmount || 0,
               passed: st.bidding.passed || [],
               mandatory: !!st.bidding.mandatory,
+              deadline: st.bidding.deadline || null,
             }
           : null;
         return {
@@ -508,6 +509,7 @@
       let uiPhase = "idle"; // idle | drawing | revealed
       let pendingCard = null;
       let drawTimer = null;
+      let bidCountdownTimer = null;
       let localGatePassed = null; // gate key already confirmed in local pass-and-play mode
       let historyOpen = false;
       let bidConfirm = null; // pending amount awaiting confirmation
@@ -655,6 +657,10 @@
       }
 
       function dispatchPhase(app, myIdx) {
+        if (gameState.phase !== "bidding" && bidCountdownTimer) {
+          clearInterval(bidCountdownTimer);
+          bidCountdownTimer = null;
+        }
         if (gameState.phase === "draw") renderDraw(app, myIdx);
         else if (gameState.phase === "bidding") renderBidding(app, myIdx);
         else if (gameState.phase === "reveal_pending") renderReveal(app, myIdx);
@@ -1275,7 +1281,8 @@
           } else if (b.passed.includes(i)) {
             tag = `<span class="pill" style="opacity:.55;">🙅 Passé</span>`;
           } else if (i === b.turnIdx) {
-            tag = `<span class="pill">⏳ En train de miser</span>`;
+            const secsLeft = b.deadline ? Math.max(0, Math.ceil((b.deadline - Date.now()) / 1000)) : null;
+            tag = `<span class="pill" id="bidCountdownPill">⏳ En train de miser${secsLeft !== null ? ` (${secsLeft}s restants)` : ""}</span>`;
           } else {
             tag = `<span class="pill" style="opacity:.55;">En attente</span>`;
           }
@@ -1469,6 +1476,7 @@
             highestAmount: 0,
             passed: [],
             mandatory: true,
+            deadline: Date.now() + 20000,
           };
           phase = "bidding";
         } else {
@@ -1483,6 +1491,7 @@
               highestAmount: 0,
               passed: [],
               mandatory: false,
+              deadline: Date.now() + 20000,
             };
             phase = "bidding";
           }
@@ -1494,6 +1503,27 @@
 
       function renderBidding(app, myIdx) {
         const b = gameState.bidding;
+        if (!bidCountdownTimer) {
+          bidCountdownTimer = setInterval(() => {
+            if (!gameState || gameState.phase !== "bidding") {
+              clearInterval(bidCountdownTimer);
+              bidCountdownTimer = null;
+              return;
+            }
+            const curr = gameState.bidding;
+            if (curr && !curr.deadline) {
+              // ancien état sans deadline (partie reprise avant l'ajout du timer) : on s'en donne un
+              updateState({ ...gameState, bidding: { ...curr, deadline: Date.now() + 20000 } });
+              return;
+            }
+            if (onBidTimeout()) return;
+            const pill = document.getElementById("bidCountdownPill");
+            if (pill && curr && curr.deadline) {
+              const secsLeft = Math.max(0, Math.ceil((curr.deadline - Date.now()) / 1000));
+              pill.textContent = `⏳ En train de miser (${secsLeft}s restants)`;
+            }
+          }, 1000);
+        }
         if (bidConfirm !== null && myIdx !== b.turnIdx) {
           bidConfirm = null;
         }
@@ -1648,6 +1678,7 @@
           highestAmount: amount,
           turnIdx: nextIdx === -1 ? null : nextIdx,
           mandatory: false,
+          deadline: Date.now() + 20000,
         };
         const phase = nextIdx === -1 ? "reveal_pending" : "bidding";
         updateState({ ...gameState, bidding: newBidding, phase });
@@ -1663,9 +1694,27 @@
           newPassed,
           gameState.settings.maxCards,
         );
-        const newBidding = { ...b, passed: newPassed, turnIdx: nextIdx === -1 ? null : nextIdx };
+        const newBidding = { ...b, passed: newPassed, turnIdx: nextIdx === -1 ? null : nextIdx, deadline: nextIdx === -1 ? null : Date.now() + 20000 };
         const phase = nextIdx === -1 ? "reveal_pending" : "bidding";
         updateState({ ...gameState, bidding: newBidding, phase });
+      }
+
+      // Auto-passe (ou mise le minimum si mise obligatoire) quand le temps est écoulé; renvoie true si une action a été prise.
+      function onBidTimeout() {
+        const b = gameState.bidding;
+        if (!b || !b.deadline || Date.now() < b.deadline) return false;
+        if (b.mandatory) {
+          const floor =
+            b.highestIdx === null
+              ? gameState.settings.bidStep
+              : b.highestAmount + gameState.settings.bidStep;
+          const me = gameState.players[b.turnIdx];
+          if (floor <= me.budget) onBid(b.turnIdx, floor);
+          else onPass(b.turnIdx);
+        } else {
+          onPass(b.turnIdx);
+        }
+        return true;
       }
 
       function renderReveal(app, myIdx) {
