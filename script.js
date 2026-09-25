@@ -503,7 +503,6 @@
         maxCards: 6,
         deck: [...DEFAULT_CHARACTERS],
         newPlayerName: "",
-        newCharName: "",
         hostName: "",
       };
       let uiPhase = "idle"; // idle | drawing | revealed
@@ -514,6 +513,8 @@
       let historyOpen = false;
       let bidConfirm = null; // pending amount awaiting confirmation
       let confettiShown = false;
+      let deckSuggestOpen = false; // affiche toutes les suggestions de personnages au lieu d'un aperçu réduit
+      let lobbyJoinName = ""; // pseudo en cours de saisie en salle d'attente, préservé entre les re-renders (autre joueur qui rejoint)
 
       function updateState(newState) {
         gameState = newState;
@@ -564,6 +565,14 @@
       }
 
       function render() {
+        // Vider app.innerHTML fait s'effondrer la hauteur de la page et le navigateur remet le scroll à 0 :
+        // on mémorise la position et on la restaure une fois le contenu reconstruit.
+        const scrollY = window.scrollY;
+        renderInner();
+        window.scrollTo(0, scrollY);
+      }
+
+      function renderInner() {
         const app = document.getElementById("app");
         app.innerHTML = "";
         app.classList.remove("fade-in");
@@ -571,7 +580,7 @@
         app.classList.add("fade-in");
         const hero = document.createElement("div");
         hero.className = "hero";
-        hero.innerHTML = `<h1>🏴‍☠️ Enchères à l'Aveugle</h1><div class="rope"></div><div class="sub">Tire une carte, mise à la hausse, remporte les personnages</div>`;
+        hero.innerHTML = `<h1><img src="assets/logo.png" alt="Logo" class="hero-logo" /> Enchères à l'Aveugle</h1><div class="rope"></div><div class="sub">Tire une carte, mise à la hausse, remporte les personnages</div>`;
         app.appendChild(hero);
 
         if (onlineLoading) {
@@ -610,7 +619,6 @@
                 maxCards: 6,
                 deck: [...DEFAULT_CHARACTERS],
                 newPlayerName: "",
-                newCharName: "",
                 hostName: "",
               };
               history.replaceState(null, "", pageUrl());
@@ -777,35 +785,58 @@
           clist.appendChild(item);
         });
         card3.appendChild(clist);
-        const row2 = document.createElement("div");
-        row2.className = "row";
-        row2.style.marginTop = "10px";
-        const cInput = document.createElement("input");
-        cInput.type = "text";
-        cInput.placeholder = "Ajouter un personnage";
-        cInput.value = draft.newCharName;
-        cInput.oninput = (e) => (draft.newCharName = e.target.value);
-        cInput.onkeydown = (e) => {
-          if (e.key === "Enter") addChar();
-        };
-        const cAdd = document.createElement("button");
-        cAdd.textContent = "+";
-        cAdd.className = "small";
-        cAdd.style.width = "46px";
-        cAdd.onclick = addChar;
-        row2.appendChild(cInput);
-        row2.appendChild(cAdd);
-        card3.appendChild(row2);
-        app.appendChild(card3);
 
-        function addChar() {
-          if (draft.newCharName.trim()) {
-            draft.deck.push(draft.newCharName.trim());
-            draft.newCharName = "";
-            render();
+        const deckKeys = new Set(draft.deck.map((c) => c.trim().toLowerCase()));
+        const suggestions = DEFAULT_CHARACTERS.filter((name) => !deckKeys.has(name.toLowerCase()));
+        const PREVIEW_COUNT = 4;
+        if (suggestions.length) {
+          const suggWrap = document.createElement("div");
+          suggWrap.style.marginTop = "12px";
+          const suggLabel = document.createElement("div");
+          suggLabel.className = "muted";
+          suggLabel.style.fontSize = "0.8rem";
+          suggLabel.style.marginBottom = "6px";
+          suggLabel.textContent = `💡 Suggestions à ajouter (${suggestions.length}) :`;
+          suggWrap.appendChild(suggLabel);
+          const chipsRow = document.createElement("div");
+          chipsRow.style.display = "flex";
+          chipsRow.style.flexWrap = "wrap";
+          chipsRow.style.gap = "6px";
+          const shown = deckSuggestOpen ? suggestions : suggestions.slice(0, PREVIEW_COUNT);
+          shown.forEach((name) => {
+            const chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "small secondary";
+            chip.innerHTML = `${avatarHtml(name, "sm")} ${name}`;
+            chip.style.display = "flex";
+            chip.style.alignItems = "center";
+            chip.style.gap = "6px";
+            chip.onclick = () => {
+              draft.deck.push(name);
+              render();
+            };
+            chipsRow.appendChild(chip);
+          });
+          suggWrap.appendChild(chipsRow);
+          if (suggestions.length > PREVIEW_COUNT) {
+            const toggle = document.createElement("button");
+            toggle.type = "button";
+            toggle.className = "ghost";
+            toggle.textContent = deckSuggestOpen
+              ? "▲ Réduire"
+              : `▼ Voir les ${suggestions.length - PREVIEW_COUNT} autres`;
+            toggle.onclick = () => {
+              deckSuggestOpen = !deckSuggestOpen;
+              render();
+            };
+            suggWrap.appendChild(toggle);
           }
+          card3.appendChild(suggWrap);
         }
+
+        app.appendChild(card3);
       }
+
 
       const PRESETS = {
         rapide: {
@@ -1126,6 +1157,10 @@
           const input = document.createElement("input");
           input.type = "text";
           input.placeholder = "Ton pseudo";
+          input.value = lobbyJoinName;
+          input.oninput = (e) => {
+            lobbyJoinName = e.target.value;
+          };
           joinCard.appendChild(input);
           const joinBtn = document.createElement("button");
           joinBtn.textContent = "✅ Rejoindre la partie";
@@ -1141,6 +1176,7 @@
               { name, budget: gameState.settings.budget, cards: [] },
             ];
             const newIdx = newPlayers.length - 1;
+            lobbyJoinName = "";
             setMyIdx(gameState.gid, newIdx);
             updateState({ ...gameState, players: newPlayers });
           };
@@ -1922,7 +1958,6 @@
             maxCards: 6,
             deck: [...DEFAULT_CHARACTERS],
             newPlayerName: "",
-            newCharName: "",
             hostName: "",
           };
           history.replaceState(null, "", pageUrl());

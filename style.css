@@ -92,6 +92,15 @@
         text-shadow:
           var(--ink-shadow),
           0 2px 10px rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+      }
+      .hero-logo {
+        height: 1.4em;
+        width: auto;
+        vertical-align: middle;
       }
       .hero .rope {
         height: 10px;
